@@ -76,8 +76,37 @@ class SelectorBIC(ModelSelector):
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        try:
+            best_model = None
+            best_score = float('inf')
+            logN = np.log(len(self.X))
+            m = len((self.lengths))
+            num_states = 0
+
+            for n in range(self.min_n_components, self.max_n_components + 1):
+                # Build model
+                model = self.base_model(n)
+
+                logL = model.score(self.X, self.lengths)
+                # Calcuate number of parameters
+                p = n**2 + (n * 2 * model.n_features - 1)
+                # BIC score
+                score = -2 * logL + p * logN
+
+                if score < best_score:
+                    best_model = model
+                    best_score = score
+                    num_states = n
+
+            if self.verbose:
+                print("model created for {} with {} states".format(self.this_word, num_states))
+
+            return best_model
+
+        except:
+            if self.verbose:
+                print("failure on {} with {} states".format(self.this_word, n))
+            return best_model
 
 
 class SelectorDIC(ModelSelector):
@@ -92,8 +121,41 @@ class SelectorDIC(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        try:
+            best_model = None
+            best_score = float('-inf')
+            logN = np.log(len(self.X))
+            num_states = 0
+            words_count = len(self.hwords.keys())
+
+            for n in range(self.min_n_components, self.max_n_components + 1):
+
+                model = self.base_model(n)
+
+                logL = model.score(self.X, self.lengths)
+
+                n_logL = 0
+                for w in self.hwords:
+                    if w != self.this_word:
+                        X, lengths = self.hwords[w]
+                        n_logL += model.score(X, lengths)
+
+
+                score = logL - 1./(words_count-1)*(n_logL-logL)
+
+                if score > best_score:
+                    best_model = model
+                    best_score = score
+                    num_states = n
+
+            return best_model
+
+        except:
+            if self.verbose:
+                print("failure on {} with {} states".format(self.this_word, n))
+            return best_model
+
+        return None
 
 
 class SelectorCV(ModelSelector):
@@ -104,5 +166,45 @@ class SelectorCV(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        try:
+            best_model = None
+            best_score = float('-inf')
+            logN = np.log(len(self.X))
+            num_states = 0
+
+            if len(self.sequences) <= 1:
+                return None
+
+            for n in range(self.min_n_components, self.max_n_components + 1):
+
+                logL_list = []
+                split_method = KFold(n_splits=2)
+
+                for train, test in split_method.split(self.sequences):
+
+                    X_train, lengths_train = combine_sequences(train, self.sequences)
+
+                    try:
+                        model = self.base_model(n)
+
+                        X_test, lengths_test = combine_sequences(test, self.sequences)
+                        logL = model.score(X_test, lengths_test)
+                        logL_list.append(logL)
+                    except:
+                        continue
+
+                score = np.mean(logL_list)
+
+                if score > best_score:
+                    best_model = model
+                    best_score = score
+                    num_states = n
+
+
+            return best_model
+
+        except Exception as e:
+            print(e)
+            if self.verbose:
+                print("failure on {} with {} states".format(self.this_word, n))
+            return best_model
